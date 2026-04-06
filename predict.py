@@ -20,7 +20,9 @@ METRICS_PATH = os.path.join(SAVE_DIR, "training_metrics.json")
 
 # Model/inference constants
 HF_MODEL_NAME = "siebert/sentiment-roberta-large-english"
-HF_API_URL_DEFAULT = f"https://api-inference.huggingface.co/models/{HF_MODEL_NAME}"
+HF_ROUTER_BASE = "https://router.huggingface.co"
+HF_LEGACY_API_BASE = "https://api-inference.huggingface.co"
+HF_API_URL_DEFAULT = f"{HF_ROUTER_BASE}/hf-inference/models/{HF_MODEL_NAME}"
 
 LABELS = ["Negative", "Positive"]
 TRUTHY_VALUES = {"1", "true", "yes", "on"}
@@ -32,6 +34,26 @@ def _is_truthy(value: str) -> bool:
 
 def _normalize_label(label: str) -> str:
     return label.lower().replace("_", "").replace("-", "").replace(" ", "")
+
+
+def _normalize_hf_api_url(url: str) -> str:
+    """Normalize user-provided URL and transparently migrate legacy API host."""
+    normalized = (url or "").strip()
+    if not normalized:
+        return HF_API_URL_DEFAULT
+
+    if normalized.startswith(HF_LEGACY_API_BASE):
+        suffix = normalized[len(HF_LEGACY_API_BASE):]
+        if not suffix.startswith("/"):
+            suffix = f"/{suffix}"
+
+        # Legacy endpoints used /models/{repo}; router now expects /hf-inference/models/{repo}.
+        if suffix.startswith("/models/"):
+            return f"{HF_ROUTER_BASE}/hf-inference{suffix}"
+
+        return f"{HF_ROUTER_BASE}{suffix}"
+
+    return normalized
 
 
 class SentimentPredictor:
@@ -56,7 +78,7 @@ class SentimentPredictor:
             # Default to hosted API on Render to avoid memory OOM.
             self.backend = "hf_api" if os.getenv("RENDER") else "local"
 
-        self.hf_api_url = os.getenv("HF_API_URL", HF_API_URL_DEFAULT)
+        self.hf_api_url = _normalize_hf_api_url(os.getenv("HF_API_URL", HF_API_URL_DEFAULT))
         self.hf_api_token = os.getenv("HF_API_TOKEN", "").strip()
         self.hf_api_timeout = int(os.getenv("HF_API_TIMEOUT", "60"))
 
