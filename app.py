@@ -15,10 +15,13 @@ import os
 
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
 
+from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from predict import SentimentPredictor
+
+load_dotenv()
 
 # ─── App ─────────────────────────────────────────────────────
 app = FastAPI(
@@ -45,8 +48,8 @@ async def startup_event():
     """Load the model when the server starts."""
     success = predictor.load()
     if not success:
-        print("⚠️  Hugging Face model failed to load.")
-        print("   The /predict endpoint will return 503 until the model is available.")
+        print("WARNING: Sentiment backend failed to load.")
+        print("         The /predict endpoint will return 503 until backend is available.")
 
 
 # ─── Schemas ─────────────────────────────────────────────────
@@ -92,7 +95,7 @@ async def predict(request: PredictRequest):
     if not predictor.is_loaded:
         raise HTTPException(
             status_code=503,
-            detail="Model not loaded. Ensure network access so Hugging Face model can be downloaded.",
+            detail="Model backend not loaded. Verify backend configuration, network access, and HF_API_TOKEN (if using hosted inference).",
         )
 
     try:
@@ -108,7 +111,7 @@ async def model_info():
     if not predictor.is_loaded:
         raise HTTPException(
             status_code=503,
-            detail="Model not loaded. Ensure network access so Hugging Face model can be downloaded.",
+            detail="Model backend not loaded. Verify backend configuration, network access, and HF_API_TOKEN (if using hosted inference).",
         )
     return predictor.get_model_info()
 
