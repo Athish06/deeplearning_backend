@@ -87,6 +87,10 @@ Desktop.ini
 frontend/.env
 
 # Training Data and Models
+.dist/
+saved_model/*
+!saved_model/training_metrics.json
+
 aclImdb/
 yelp_review_polarity_csv/
 

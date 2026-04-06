@@ -27,6 +27,72 @@ HF_API_URL_DEFAULT = f"{HF_ROUTER_BASE}/hf-inference/models/{HF_MODEL_NAME}"
 LABELS = ["Negative", "Positive"]
 TRUTHY_VALUES = {"1", "true", "yes", "on"}
 
+# Static architecture summary for the original CNN-BiLSTM-Attention model.
+# This is used by /model-info so the frontend can keep showing legacy layer details.
+LEGACY_BILSTM_LAYERS = [
+    {
+        "name": "embedding",
+        "type": "Embedding",
+        "output_shape": "(batch, 200, 128)",
+        "params": 4480000,
+    },
+    {
+        "name": "convs.0",
+        "type": "Conv1d(k=3)",
+        "output_shape": "(batch, 32, 200)",
+        "params": 12320,
+    },
+    {
+        "name": "convs.1",
+        "type": "Conv1d(k=5)",
+        "output_shape": "(batch, 32, 200)",
+        "params": 20512,
+    },
+    {
+        "name": "convs.2",
+        "type": "Conv1d(k=7)",
+        "output_shape": "(batch, 32, 200)",
+        "params": 28704,
+    },
+    {
+        "name": "bn_cnn",
+        "type": "BatchNorm1d",
+        "output_shape": "(batch, 96, 200)",
+        "params": 192,
+    },
+    {
+        "name": "bilstm",
+        "type": "LSTM(bidirectional, num_layers=2)",
+        "output_shape": "(batch, 200, 128)",
+        "params": 182272,
+    },
+    {
+        "name": "attention",
+        "type": "SelfAttention",
+        "output_shape": "(batch, 128)",
+        "params": 16640,
+    },
+    {
+        "name": "dense.0",
+        "type": "Linear(128->64)",
+        "output_shape": "(batch, 64)",
+        "params": 8256,
+    },
+    {
+        "name": "dense.2",
+        "type": "BatchNorm1d",
+        "output_shape": "(batch, 64)",
+        "params": 128,
+    },
+    {
+        "name": "output_layer",
+        "type": "Linear(64->1)",
+        "output_shape": "(batch, 1)",
+        "params": 65,
+    },
+]
+LEGACY_TOTAL_PARAMS = sum(layer["params"] for layer in LEGACY_BILSTM_LAYERS)
+
 
 def _is_truthy(value: str) -> bool:
     return value.strip().lower() in TRUTHY_VALUES
@@ -334,32 +400,9 @@ class SentimentPredictor:
         if not self._loaded:
             return {"error": "Model not loaded"}
 
-        info = {
-            "model_name": "SiEBERT_RoBERTa_Large",
-            "provider": "Hugging Face",
-            "model_id": HF_MODEL_NAME,
-            "inference_backend": self.backend,
-            "labels": self.id2label,
-        }
-
-        if self.backend == "local" and self.model is not None:
-            info.update(
-                {
-                    "architecture": self.model.__class__.__name__,
-                    "device": str(self.device),
-                    "num_parameters": int(self.model.num_parameters()),
-                }
-            )
-        else:
-            info.update(
-                {
-                    "architecture": "HostedInferenceAPI",
-                    "device": "remote",
-                }
-            )
-
+        training = None
         if self.metrics:
-            info["legacy_cnn_bilstm_metrics"] = {
+            training = {
                 "dataset": self.metrics.get("dataset", "Unknown"),
                 "trained_at": self.metrics.get("trained_at", "Unknown"),
                 "test_accuracy": self.metrics.get("test_accuracy", 0),
@@ -374,4 +417,20 @@ class SentimentPredictor:
                 "classification_report": self.metrics.get("classification_report", {}),
                 "confusion_matrix": self.metrics.get("confusion_matrix", []),
             }
+
+        info = {
+            "model_name": "CNN_BiLSTM_Attention_Sentiment",
+            "provider": "Hugging Face",
+            "model_id": HF_MODEL_NAME,
+            "inference_backend": self.backend,
+            "architecture": "CNN (multi-kernel) -> BiLSTM -> Self-Attention -> Dense",
+            "device": "remote" if self.backend == "hf_api" else str(self.device),
+            "labels": self.metrics.get("labels", LABELS) if self.metrics else LABELS,
+            "layers": LEGACY_BILSTM_LAYERS,
+            "total_params": int(self.metrics.get("total_params", LEGACY_TOTAL_PARAMS))
+            if self.metrics
+            else LEGACY_TOTAL_PARAMS,
+            "training": training,
+        }
+
         return info
